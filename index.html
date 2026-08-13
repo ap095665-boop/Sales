@@ -24,6 +24,17 @@ button,input{font:inherit}button{cursor:pointer}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-end;justify-content:center;z-index:5}.sheet{background:#fff;width:min(520px,100%);border-radius:22px 22px 0 0;padding:18px}.sheet h3{margin-top:0}.sheet input{width:100%;padding:13px;border:1px solid #d1d5db;border-radius:12px}.sheet-actions{display:flex;gap:8px;margin-top:10px}.sheet-actions button{flex:1;padding:12px;border:0;border-radius:12px;font-weight:800}.danger{background:#fee2e2}.primary{background:#111827;color:#fff}
 .footer{padding:12px 16px 28px;text-align:center;color:#9ca3af;font-size:11px}
 @media(min-width:521px){body{padding:20px 0}.app{border-radius:25px;overflow:hidden}}
+
+.calc-overlay{position:fixed;inset:0;background:#0008;z-index:50;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .18s}
+.calc-overlay.open{opacity:1;pointer-events:auto}
+.calc-sheet{width:min(520px,100%);background:#fff;border-radius:24px 24px 0 0;padding:16px;transform:translateY(100%);transition:transform .22s}
+.calc-overlay.open .calc-sheet{transform:translateY(0)}
+.calc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.calc-head b{font-size:19px}.calc-close{border:0;background:#f3f4f6;padding:9px 12px;border-radius:10px;font-weight:800}
+.calc-display{height:72px;background:#111827;color:#fff;border-radius:16px;display:flex;align-items:center;justify-content:flex-end;padding:0 16px;font-size:32px;font-weight:800;margin-bottom:9px;overflow:hidden}
+.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.calc-key{height:56px;border:0;border-radius:14px;background:#f3f4f6;font-size:21px;font-weight:750}.calc-key:active{transform:scale(.97)}
+.calc-op{background:#e5e7eb}.calc-danger{background:#fee2e2;color:#991b1b}.calc-eq{background:#111827;color:#fff}.calc-zero{grid-column:span 2}
+.calc-note{text-align:center;color:#9ca3af;font-size:10px;margin-top:9px}
 </style>
 </head>
 <body>
@@ -58,7 +69,7 @@ button,input{font:inherit}button{cursor:pointer}
   </div>
 
   <div class="entry">
-    <div class="display" id="display">₹0</div>
+    <div class="display" id="display" title="Double-tap to open calculator">₹0</div><div style="text-align:center;color:#9ca3af;font-size:10px;margin:-4px 0 8px">Double-tap the amount screen for calculator</div>
     <div class="pad">
       <button class="key" data-key="1">1</button><button class="key" data-key="2">2</button><button class="key" data-key="3">3</button>
       <button class="key" data-key="4">4</button><button class="key" data-key="5">5</button><button class="key" data-key="6">6</button>
@@ -88,7 +99,7 @@ button,input{font:inherit}button{cursor:pointer}
       <button id="pdfBtn">Download PDF</button>
       <button class="secondary" id="backupBtn">Backup Data</button>
     </div>
-    <input type="file" id="restoreInput" accept=".json" hidden>
+    <button class="secondary" id="restoreBtn" style="margin-top:8px;width:100%;padding:11px;border:0;border-radius:11px;font-weight:750">Restore Backup</button><input type="file" id="restoreInput" accept=".json" hidden>
   </section>
 
   <div class="footer">Your sales stay on this device unless you export a backup.</div>
@@ -114,11 +125,19 @@ let currentView='daily';
 let customRange=null;
 
 const $=id=>document.getElementById(id);
-const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+function money(n){
+  const value = Number.isFinite(Number(n)) ? Number(n) : 0;
+  return '₹' + value.toLocaleString('en-IN',{maximumFractionDigits:2});
+}
 const pad=n=>String(n).padStart(2,'0');
 function dateKey(d=new Date()){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
 function parseDate(s){const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)}
-function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function save(){
+  localStorage.setItem(KEY, JSON.stringify(data));
+}
+if (!data || !Array.isArray(data.transactions)) {
+  data = {transactions: []};
+}
 function startOfWeek(d){const x=new Date(d);const day=x.getDay();x.setDate(x.getDate()-(day===0?6:day-1));x.setHours(0,0,0,0);return x}
 function endOfWeek(d){const x=startOfWeek(d);x.setDate(x.getDate()+6);x.setHours(23,59,59,999);return x}
 function startOfMonth(d){return new Date(d.getFullYear(),d.getMonth(),1)}
@@ -145,7 +164,7 @@ function previousRange(view){
  return null;
 }
 function refresh(){
- $('display').textContent=money(amount||0);
+ $('display').textContent = money(amount);
  $('todayText').textContent=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
  const [a,b]=rangeFor(currentView), s=summary(a,b);
  $('topLabel').textContent=currentView==='custom'?'CUSTOM PERIOD':currentView.toUpperCase()+' REVENUE';
@@ -161,9 +180,35 @@ function refresh(){
  renderTransactions();
 }
 function addSale(){
- const n=Number(amount); if(!n||n<0)return;
- data.transactions.push({id:crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random(),amount:n,time:new Date().toISOString()});
- save();amount='';refresh();
+  const n = parseInt(String(amount || '').replace(/[^0-9]/g,''), 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    alert('Enter a sale amount first.');
+    return;
+  }
+
+  if (!data || !Array.isArray(data.transactions)) {
+    data = {transactions: []};
+  }
+
+  data.transactions.push({
+    id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+    amount: n,
+    time: new Date().toISOString()
+  });
+
+  try {
+    save();
+  } catch (e) {
+    alert('Could not save the sale in this browser. Please check browser storage settings.');
+    return;
+  }
+
+  amount = '';
+  refresh();
+  const ok = document.getElementById('ok');
+  const old = ok.textContent;
+  ok.textContent = '✓ RECORDED';
+  setTimeout(() => ok.textContent = old, 650);
 }
 function renderTransactions(){
  const [a,b]=rangeFor('daily');
@@ -181,7 +226,7 @@ document.querySelectorAll('.key').forEach(k=>k.addEventListener('click',()=>{
  const v=k.dataset.key;
  if(v==='C')amount='';
  else if(v==='back')amount=amount.slice(0,-1);
- else if(amount.length<9)amount+=v;
+ else if(/^[0-9]$/.test(v) && amount.length < 9) amount += v;
  refresh();
 }));
 $('ok').onclick=addSale;
@@ -209,18 +254,103 @@ function reportText(){
  s.tx.forEach((x,i)=>lines.push(`${i+1}. ${money(x.amount)} - ${new Date(x.time).toLocaleString('en-IN')}`));
  return lines.join('\\n');
 }
+function buildSimplePDF(text){
+  const esc=s=>s.replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+  const lines=text.split('\n').slice(0,48);
+  const content=['BT','/F1 10 Tf','50 800 Td', '14 TL'];
+  lines.forEach((line,i)=>{ if(i) content.push('T*'); content.push('('+esc(line.slice(0,105))+') Tj'); });
+  content.push('ET');
+  const stream=content.join('\n');
+  const objs=[
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\\nstream\\n${stream}\\nendstream`
+  ];
+  let pdf='%PDF-1.4\\n', offsets=[0];
+  objs.forEach((o,i)=>{offsets[i+1]=pdf.length;pdf+=(i+1)+' 0 obj\\n'+o+'\\nendobj\\n';});
+  const xref=pdf.length;
+  pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n';
+  for(let i=1;i<=objs.length;i++) pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \\n';
+  pdf+='trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+xref+'\\n%%EOF';
+  return new Blob([pdf],{type:'application/pdf'});
+}
 $('pdfBtn').onclick=()=>{
- const text=reportText();
- const w=window.open('','_blank');
- if(!w){alert('Please allow pop-ups to generate the report.');return}
- w.document.write(`<pre style="font:14px system-ui;white-space:pre-wrap;padding:30px">${escapeHtml(text)}</pre><script>window.print()<\/script>`);
- w.document.close();
+  const blob=buildSimplePDF(reportText());
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`sales-report-${dateKey()}.pdf`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 $('backupBtn').onclick=()=>{
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`sales-backup-${dateKey()}.json`;a.click();URL.revokeObjectURL(a.href);
 };
+try {
+  const testKey='__sales_counter_test__';
+  localStorage.setItem(testKey,'1');
+  localStorage.removeItem(testKey);
+} catch(e) {
+  alert('Browser storage is blocked. Sales cannot be saved until site storage is allowed.');
+}
 refresh();
+
+(function(){
+  const overlay=document.getElementById('calcOverlay'), sheet=document.getElementById('calcSheet');
+  const out=document.getElementById('calcDisplay'), close=document.getElementById('calcClose');
+  let c='0',stored=null,op=null,waiting=false,lastTap=0;
+  function render(){out.textContent=c}
+  function clear(){c='0';stored=null;op=null;waiting=false;render()}
+  function calc(a,b,o){a=Number(a);b=Number(b);if(o==='+')return a+b;if(o==='-')return a-b;if(o==='*')return a*b;if(o==='/')return b===0?NaN:a/b}
+  function digit(x){if(waiting){c=x;waiting=false}else c=c==='0'?x:c+x;if(c.length>14)c=c.slice(0,14);render()}
+  function choose(o){const n=Number(c);if(stored===null)stored=n;else if(op&&!waiting){const r=calc(stored,n,op);c=Number.isFinite(r)?String(r):'Error';stored=Number.isFinite(r)?r:null}op=o;waiting=true;render()}
+  function equal(){if(op===null||stored===null)return;const r=calc(stored,Number(c),op);c=Number.isFinite(r)?String(r):'Error';stored=null;op=null;waiting=true;render()}
+  function open(){overlay.classList.add('open');overlay.setAttribute('aria-hidden','false')}
+  function closeCalc(){overlay.classList.remove('open');overlay.setAttribute('aria-hidden','true')}
+  document.querySelectorAll('[data-calc-key]').forEach(b=>b.onclick=()=>/[0-9]/.test(b.dataset.calcKey)?digit(b.dataset.calcKey):choose(b.dataset.calcKey));
+  document.querySelector('[data-calc-action="clear"]').onclick=clear;
+  document.querySelector('[data-calc-action="decimal"]').onclick=()=>{if(waiting){c='0.';waiting=false}else if(!c.includes('.'))c+='.';render()};
+  document.querySelector('[data-calc-action="equals"]').onclick=equal;
+  document.querySelector('[data-calc-action="sign"]').onclick=()=>{if(c!=='0')c=c.startsWith('-')?c.slice(1):'-'+c;render()};
+  document.querySelector('[data-calc-action="percent"]').onclick=()=>{c=String(Number(c)/100);render()};
+  close.onclick=closeCalc; overlay.onclick=e=>{if(e.target===overlay)closeCalc()};
+  const display=document.getElementById('display');
+  display.addEventListener('touchend',e=>{
+    const now=Date.now();
+    if(now-lastTap<350){e.preventDefault();open()}
+    lastTap=now;
+  },{passive:false});
+  display.addEventListener('dblclick',open);
+  document.addEventListener('keydown',e=>{
+    if(overlay.classList.contains('open')){
+      if(/[0-9]/.test(e.key))digit(e.key);
+      else if(['+','-','*','/'].includes(e.key))choose(e.key);
+      else if(e.key==='Enter'||e.key==='=')equal();
+      else if(e.key==='Escape')closeCalc();
+      else if(e.key==='.') {if(!c.includes('.'))c+='.';render()}
+    }
+  });
+  render();
+})();
+
 </script>
+
+<div class="calc-overlay" id="calcOverlay" aria-hidden="true">
+  <div class="calc-sheet" id="calcSheet">
+    <div class="calc-head"><b>Calculator</b><button class="calc-close" id="calcClose">Close</button></div>
+    <div class="calc-display" id="calcDisplay">0</div>
+    <div class="calc-keys">
+      <button class="calc-key calc-danger" data-calc-action="clear">C</button>
+      <button class="calc-key calc-op" data-calc-action="sign">±</button>
+      <button class="calc-key calc-op" data-calc-action="percent">%</button>
+      <button class="calc-key calc-op" data-calc-key="/">÷</button>
+      <button class="calc-key" data-calc-key="7">7</button><button class="calc-key" data-calc-key="8">8</button><button class="calc-key" data-calc-key="9">9</button><button class="calc-key calc-op" data-calc-key="*">×</button>
+      <button class="calc-key" data-calc-key="4">4</button><button class="calc-key" data-calc-key="5">5</button><button class="calc-key" data-calc-key="6">6</button><button class="calc-key calc-op" data-calc-key="-">−</button>
+      <button class="calc-key" data-calc-key="1">1</button><button class="calc-key" data-calc-key="2">2</button><button class="calc-key" data-calc-key="3">3</button><button class="calc-key calc-op" data-calc-key="+">+</button>
+      <button class="calc-key calc-zero" data-calc-key="0">0</button><button class="calc-key" data-calc-action="decimal">.</button><button class="calc-key calc-eq" data-calc-action="equals">=</button>
+    </div>
+    <div class="calc-note">Calculator is separate from sales. Double-tap the amount display again to close.</div>
+  </div>
+</div>
 </body>
 </html>
