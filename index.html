@@ -69,7 +69,10 @@ button,input{font:inherit}button{cursor:pointer}
   </div>
 
   <div class="entry">
-    <div class="display" id="display" title="Double-tap to open calculator">₹0</div><div style="text-align:center;color:#9ca3af;font-size:10px;margin:-4px 0 8px">Double-tap the amount screen for calculator</div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+      <button id="openCalcBtn" type="button" style="border:0;background:#e5e7eb;color:#111827;padding:8px 12px;border-radius:10px;font-size:12px;font-weight:800">🧮 Calculator</button>
+    </div>
+    <div class="display" id="display" title="Double-tap to open calculator">₹0</div>
     <div class="pad">
       <button class="key" data-key="1">1</button><button class="key" data-key="2">2</button><button class="key" data-key="3">3</button>
       <button class="key" data-key="4">4</button><button class="key" data-key="5">5</button><button class="key" data-key="6">6</button>
@@ -255,32 +258,57 @@ function reportText(){
  return lines.join('\\n');
 }
 function buildSimplePDF(text){
-  const esc=s=>s.replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
-  const lines=text.split('\n').slice(0,48);
-  const content=['BT','/F1 10 Tf','50 800 Td', '14 TL'];
-  lines.forEach((line,i)=>{ if(i) content.push('T*'); content.push('('+esc(line.slice(0,105))+') Tj'); });
-  content.push('ET');
-  const stream=content.join('\n');
-  const objs=[
+  const clean = String(text || '').replace(/[^\x20-\x7E\n]/g,'');
+  const lines = clean.split(/\r?\n/).slice(0, 52);
+  const esc = s => String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+  let stream = 'BT\n/F1 10 Tf\n50 800 Td\n14 TL\n';
+  lines.forEach((line,i)=>{
+    if(i>0) stream += 'T*\n';
+    stream += '(' + esc(line.slice(0,105)) + ') Tj\n';
+  });
+  stream += 'ET\n';
+
+  const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${stream.length} >>\\nstream\\n${stream}\\nendstream`
+    '<< /Length ' + new TextEncoder().encode(stream).length + ' >>\nstream\n' + stream + 'endstream'
   ];
-  let pdf='%PDF-1.4\\n', offsets=[0];
-  objs.forEach((o,i)=>{offsets[i+1]=pdf.length;pdf+=(i+1)+' 0 obj\\n'+o+'\\nendobj\\n';});
-  const xref=pdf.length;
-  pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n';
-  for(let i=1;i<=objs.length;i++) pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \\n';
-  pdf+='trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+xref+'\\n%%EOF';
-  return new Blob([pdf],{type:'application/pdf'});
+
+  const encoder = new TextEncoder();
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((obj,i)=>{
+    offsets[i+1] = encoder.encode(pdf).length;
+    pdf += (i+1) + ' 0 obj\n' + obj + '\nendobj\n';
+  });
+  const xref = encoder.encode(pdf).length;
+  pdf += 'xref\n0 ' + (objects.length+1) + '\n';
+  pdf += '0000000000 65535 f \n';
+  for(let i=1;i<=objects.length;i++){
+    pdf += String(offsets[i]).padStart(10,'0') + ' 00000 n \n';
+  }
+  pdf += 'trailer\n<< /Size ' + (objects.length+1) + ' /Root 1 0 R >>\n';
+  pdf += 'startxref\n' + xref + '\n%%EOF';
+  return new Blob([encoder.encode(pdf)],{type:'application/pdf'});
 }
+
 $('pdfBtn').onclick=()=>{
-  const blob=buildSimplePDF(reportText());
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download=`sales-report-${dateKey()}.pdf`;a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  try{
+    const blob=buildSimplePDF(reportText());
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='sales-report-'+dateKey()+'.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(err){
+    alert('Could not create the PDF. Please try again.');
+    console.error(err);
+  }
 };
 $('backupBtn').onclick=()=>{
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -315,21 +343,121 @@ refresh();
   document.querySelector('[data-calc-action="percent"]').onclick=()=>{c=String(Number(c)/100);render()};
   close.onclick=closeCalc; overlay.onclick=e=>{if(e.target===overlay)closeCalc()};
   const display=document.getElementById('display');
-  display.addEventListener('touchend',e=>{
-    const now=Date.now();
-    if(now-lastTap<350){e.preventDefault();open()}
-    lastTap=now;
-  },{passive:false});
-  display.addEventListener('dblclick',open);
+  let tapTimer=null, tapCount=0, touchStart=0;
+
+  function registerTap(){
+    tapCount++;
+    if(tapCount===1){
+      tapTimer=setTimeout(()=>{tapCount=0},450);
+    }else{
+      clearTimeout(tapTimer);
+      tapCount=0;
+      open();
+    }
+  }
+
+  display.addEventListener('click', registerTap);
+  display.addEventListener('touchend', function(e){
+    if(Date.now()-touchStart<700){
+      e.preventDefault();
+      registerTap();
+    }
+  }, {passive:false});
+  display.addEventListener('touchstart', function(){
+    touchStart=Date.now();
+  }, {passive:true});
+
+  render();
+})()
+
+
+// Built-in calculator popup
+(function(){
+  const overlay=document.getElementById('calcOverlay');
+  const openBtn=document.getElementById('openCalcBtn');
+  const closeBtn=document.getElementById('calcClose');
+  const out=document.getElementById('calcDisplay');
+
+  let current='0', stored=null, operator=null, waiting=false;
+
+  function render(){ out.textContent=current; }
+  function reset(){ current='0';stored=null;operator=null;waiting=false;render(); }
+  function operate(a,b,op){
+    a=Number(a); b=Number(b);
+    if(op==='+') return a+b;
+    if(op==='-') return a-b;
+    if(op==='*') return a*b;
+    if(op==='/') return b===0 ? NaN : a/b;
+    return b;
+  }
+  function digit(d){
+    if(waiting){current=d;waiting=false;}
+    else current=current==='0'?d:current+d;
+    if(current.length>14) current=current.slice(0,14);
+    render();
+  }
+  function choose(op){
+    const value=Number(current);
+    if(stored===null) stored=value;
+    else if(operator && !waiting){
+      const result=operate(stored,value,operator);
+      current=Number.isFinite(result)?String(result):'Error';
+      stored=Number.isFinite(result)?result:null;
+    }
+    operator=op;
+    waiting=true;
+    render();
+  }
+  function equals(){
+    if(operator===null || stored===null)return;
+    const result=operate(stored,Number(current),operator);
+    current=Number.isFinite(result)?String(result):'Error';
+    stored=null;operator=null;waiting=true;
+    render();
+  }
+  function open(){ reset(); overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false'); }
+  function close(){ overlay.classList.remove('open'); overlay.setAttribute('aria-hidden','true'); }
+
+  openBtn.addEventListener('click',open);
+  closeBtn.addEventListener('click',close);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
+
+  document.querySelectorAll('[data-calc-key]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const k=btn.dataset.calcKey;
+      if(/^[0-9]$/.test(k)) digit(k);
+      else choose(k);
+    });
+  });
+
+  document.querySelector('[data-calc-action="clear"]').onclick=reset;
+  document.querySelector('[data-calc-action="decimal"]').onclick=()=>{
+    if(waiting){current='0.';waiting=false;}
+    else if(!current.includes('.'))current+='.';
+    render();
+  };
+  document.querySelector('[data-calc-action="equals"]').onclick=equals;
+  document.querySelector('[data-calc-action="sign"]').onclick=()=>{
+    if(current!=='0')current=current.startsWith('-')?current.slice(1):'-'+current;
+    render();
+  };
+  document.querySelector('[data-calc-action="percent"]').onclick=()=>{
+    current=String(Number(current)/100);
+    render();
+  };
+
   document.addEventListener('keydown',e=>{
-    if(overlay.classList.contains('open')){
-      if(/[0-9]/.test(e.key))digit(e.key);
-      else if(['+','-','*','/'].includes(e.key))choose(e.key);
-      else if(e.key==='Enter'||e.key==='=')equal();
-      else if(e.key==='Escape')closeCalc();
-      else if(e.key==='.') {if(!c.includes('.'))c+='.';render()}
+    if(!overlay.classList.contains('open'))return;
+    if(/^[0-9]$/.test(e.key))digit(e.key);
+    else if(['+','-','*','/'].includes(e.key))choose(e.key);
+    else if(e.key==='Enter'||e.key==='=')equals();
+    else if(e.key==='Escape')close();
+    else if(e.key==='.'){
+      if(!current.includes('.'))current+='.';
+      render();
     }
   });
+
   render();
 })();
 
@@ -337,19 +465,37 @@ refresh();
 
 <div class="calc-overlay" id="calcOverlay" aria-hidden="true">
   <div class="calc-sheet" id="calcSheet">
-    <div class="calc-head"><b>Calculator</b><button class="calc-close" id="calcClose">Close</button></div>
+    <div class="calc-head">
+      <b>Calculator</b>
+      <button class="calc-close" id="calcClose" type="button">Close</button>
+    </div>
     <div class="calc-display" id="calcDisplay">0</div>
     <div class="calc-keys">
       <button class="calc-key calc-danger" data-calc-action="clear">C</button>
       <button class="calc-key calc-op" data-calc-action="sign">±</button>
       <button class="calc-key calc-op" data-calc-action="percent">%</button>
       <button class="calc-key calc-op" data-calc-key="/">÷</button>
-      <button class="calc-key" data-calc-key="7">7</button><button class="calc-key" data-calc-key="8">8</button><button class="calc-key" data-calc-key="9">9</button><button class="calc-key calc-op" data-calc-key="*">×</button>
-      <button class="calc-key" data-calc-key="4">4</button><button class="calc-key" data-calc-key="5">5</button><button class="calc-key" data-calc-key="6">6</button><button class="calc-key calc-op" data-calc-key="-">−</button>
-      <button class="calc-key" data-calc-key="1">1</button><button class="calc-key" data-calc-key="2">2</button><button class="calc-key" data-calc-key="3">3</button><button class="calc-key calc-op" data-calc-key="+">+</button>
-      <button class="calc-key calc-zero" data-calc-key="0">0</button><button class="calc-key" data-calc-action="decimal">.</button><button class="calc-key calc-eq" data-calc-action="equals">=</button>
+
+      <button class="calc-key" data-calc-key="7">7</button>
+      <button class="calc-key" data-calc-key="8">8</button>
+      <button class="calc-key" data-calc-key="9">9</button>
+      <button class="calc-key calc-op" data-calc-key="*">×</button>
+
+      <button class="calc-key" data-calc-key="4">4</button>
+      <button class="calc-key" data-calc-key="5">5</button>
+      <button class="calc-key" data-calc-key="6">6</button>
+      <button class="calc-key calc-op" data-calc-key="-">−</button>
+
+      <button class="calc-key" data-calc-key="1">1</button>
+      <button class="calc-key" data-calc-key="2">2</button>
+      <button class="calc-key" data-calc-key="3">3</button>
+      <button class="calc-key calc-op" data-calc-key="+">+</button>
+
+      <button class="calc-key calc-zero" data-calc-key="0">0</button>
+      <button class="calc-key" data-calc-action="decimal">.</button>
+      <button class="calc-key calc-eq" data-calc-action="equals">=</button>
     </div>
-    <div class="calc-note">Calculator is separate from sales. Double-tap the amount display again to close.</div>
+    <div class="calc-note">This calculator is separate from sales. Calculations never change revenue.</div>
   </div>
 </div>
 </body>
