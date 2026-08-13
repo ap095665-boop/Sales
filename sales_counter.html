@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Sales Counter</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#f3f4f6;color:#111827}
+button,input{font:inherit}button{cursor:pointer}
+.app{max-width:520px;margin:auto;min-height:100vh;background:#fff;box-shadow:0 0 30px #00000012}
+.header{padding:18px 18px 10px;display:flex;justify-content:space-between;align-items:center}
+.brand{font-weight:800;font-size:20px}.date{font-size:12px;color:#6b7280}
+.revenue-card{margin:8px 16px 12px;padding:18px;border-radius:22px;background:#111827;color:white}
+.revenue-label{font-size:12px;opacity:.7}.revenue{font-size:34px;font-weight:850;margin-top:3px}.stats{display:flex;gap:8px;margin-top:12px}.stat{flex:1;background:#ffffff12;border-radius:13px;padding:9px}.stat small{display:block;opacity:.65;font-size:10px}.stat b{font-size:15px}
+.tabs{display:flex;margin:0 16px 12px;background:#f3f4f6;border-radius:13px;padding:3px}.tab{flex:1;border:0;background:transparent;padding:10px 5px;border-radius:10px;font-weight:700;font-size:13px}.tab.active{background:#fff;box-shadow:0 1px 5px #0001}
+.period{margin:0 16px 12px;padding:13px;background:#f9fafb;border-radius:15px;display:none}.period-row{display:flex;gap:8px}.period input{width:50%;padding:10px;border:1px solid #d1d5db;border-radius:10px;background:white}.period button{margin-top:8px;width:100%;padding:10px;border:0;border-radius:10px;background:#e5e7eb;font-weight:700}
+.entry{padding:8px 16px 16px}.display{height:70px;border:2px solid #e5e7eb;border-radius:18px;display:flex;align-items:center;justify-content:flex-end;padding:0 18px;font-size:35px;font-weight:800;margin-bottom:10px;overflow:hidden}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.key{height:58px;border:0;border-radius:15px;background:#f3f4f6;font-size:23px;font-weight:750}.key:active{transform:scale(.97)}.clear{font-size:16px}.ok{background:#111827;color:#fff}.adjust{width:100%;margin-top:9px;padding:13px;border:1px solid #d1d5db;border-radius:13px;background:#fff;font-weight:750}
+.records-btn{margin:0 16px 14px;width:calc(100% - 32px);padding:14px;border:0;border-radius:14px;background:#e5e7eb;font-weight:800}
+.report{margin:0 16px 18px;padding:16px;border-radius:18px;background:#f9fafb}.report h3{margin:0 0 12px}.report-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.report-box{background:#fff;padding:12px;border-radius:13px}.report-box small{display:block;color:#6b7280}.report-box b{font-size:18px}
+.report-actions{display:flex;gap:8px;margin-top:12px}.report-actions button{flex:1;padding:11px;border:0;border-radius:11px;background:#111827;color:#fff;font-weight:750}.report-actions .secondary{background:#e5e7eb;color:#111827}
+.list{display:none;margin:0 16px 20px}.list h3{margin:0 0 10px}.tx{display:flex;justify-content:space-between;padding:12px 4px;border-bottom:1px solid #eee}.tx .meta{font-size:12px;color:#6b7280}.tx button{border:0;background:#fee2e2;color:#991b1b;border-radius:8px;padding:6px 8px}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-end;justify-content:center;z-index:5}.sheet{background:#fff;width:min(520px,100%);border-radius:22px 22px 0 0;padding:18px}.sheet h3{margin-top:0}.sheet input{width:100%;padding:13px;border:1px solid #d1d5db;border-radius:12px}.sheet-actions{display:flex;gap:8px;margin-top:10px}.sheet-actions button{flex:1;padding:12px;border:0;border-radius:12px;font-weight:800}.danger{background:#fee2e2}.primary{background:#111827;color:#fff}
+.footer{padding:12px 16px 28px;text-align:center;color:#9ca3af;font-size:11px}
+@media(min-width:521px){body{padding:20px 0}.app{border-radius:25px;overflow:hidden}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="brand">Sales Counter</div>
+    <div class="date" id="todayText"></div>
+  </div>
+
+  <div class="revenue-card">
+    <div class="revenue-label" id="topLabel">TODAY'S REVENUE</div>
+    <div class="revenue" id="topRevenue">₹0</div>
+    <div class="stats">
+      <div class="stat"><small>CUSTOMERS</small><b id="topCustomers">0</b></div>
+      <div class="stat"><small>AVG / CUSTOMER</small><b id="topAverage">₹0</b></div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="daily">Daily</button>
+    <button class="tab" data-view="weekly">Weekly</button>
+    <button class="tab" data-view="monthly">Monthly</button>
+    <button class="tab" data-view="custom">Custom</button>
+  </div>
+
+  <div class="period" id="customPeriod">
+    <div class="period-row">
+      <input type="date" id="fromDate">
+      <input type="date" id="toDate">
+    </div>
+    <button id="applyCustom">Apply dates</button>
+  </div>
+
+  <div class="entry">
+    <div class="display" id="display">₹0</div>
+    <div class="pad">
+      <button class="key" data-key="1">1</button><button class="key" data-key="2">2</button><button class="key" data-key="3">3</button>
+      <button class="key" data-key="4">4</button><button class="key" data-key="5">5</button><button class="key" data-key="6">6</button>
+      <button class="key" data-key="7">7</button><button class="key" data-key="8">8</button><button class="key" data-key="9">9</button>
+      <button class="key clear" data-key="C">C</button><button class="key" data-key="0">0</button><button class="key clear" data-key="back">⌫</button>
+      <button class="key ok" id="ok" style="grid-column:1/4">OK — RECORD SALE</button>
+    </div>
+    <button class="adjust" id="adjustBtn">Adjust Previous Customer</button>
+  </div>
+
+  <button class="records-btn" id="recordsBtn">▾ View Transactions</button>
+
+  <section class="list" id="list">
+    <h3>Transactions</h3>
+    <div id="transactions"></div>
+  </section>
+
+  <section class="report">
+    <h3 id="reportTitle">Today's Report</h3>
+    <div class="report-grid">
+      <div class="report-box"><small>Revenue</small><b id="rRevenue">₹0</b></div>
+      <div class="report-box"><small>Customers</small><b id="rCustomers">0</b></div>
+      <div class="report-box"><small>Average</small><b id="rAverage">₹0</b></div>
+      <div class="report-box"><small>Last period</small><b id="rLast">—</b></div>
+    </div>
+    <div class="report-actions">
+      <button id="pdfBtn">Download PDF</button>
+      <button class="secondary" id="backupBtn">Backup Data</button>
+    </div>
+    <input type="file" id="restoreInput" accept=".json" hidden>
+  </section>
+
+  <div class="footer">Your sales stay on this device unless you export a backup.</div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3>Adjust Previous Customer</h3>
+    <p style="color:#6b7280;font-size:13px">Enter the customer's new total. The latest transaction will be replaced.</p>
+    <input type="number" id="adjustInput" min="0" inputmode="numeric" placeholder="New total amount">
+    <div class="sheet-actions">
+      <button class="danger" id="cancelAdjust">Cancel</button>
+      <button class="primary" id="saveAdjust">Save adjustment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY='sales_counter_v1';
+let data=JSON.parse(localStorage.getItem(KEY)||'{"transactions":[]}');
+let amount='';
+let currentView='daily';
+let customRange=null;
+
+const $=id=>document.getElementById(id);
+const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+const pad=n=>String(n).padStart(2,'0');
+function dateKey(d=new Date()){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
+function parseDate(s){const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)}
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function startOfWeek(d){const x=new Date(d);const day=x.getDay();x.setDate(x.getDate()-(day===0?6:day-1));x.setHours(0,0,0,0);return x}
+function endOfWeek(d){const x=startOfWeek(d);x.setDate(x.getDate()+6);x.setHours(23,59,59,999);return x}
+function startOfMonth(d){return new Date(d.getFullYear(),d.getMonth(),1)}
+function endOfMonth(d){return new Date(d.getFullYear(),d.getMonth()+1,0,23,59,59,999)}
+function inRange(t,a,b){const d=new Date(t);return d>=a&&d<=b}
+function rangeFor(view){
+ const now=new Date();
+ if(view==='daily'){let a=new Date(now);a.setHours(0,0,0,0);let b=new Date(now);b.setHours(23,59,59,999);return [a,b]}
+ if(view==='weekly')return [startOfWeek(now),endOfWeek(now)];
+ if(view==='monthly')return [startOfMonth(now),endOfMonth(now)];
+ if(customRange)return [parseDate(customRange[0]),new Date(parseDate(customRange[1]).setHours(23,59,59,999))];
+ return [new Date(),new Date()];
+}
+function summary(a,b){
+ const tx=data.transactions.filter(x=>inRange(x.time,a,b));
+ const revenue=tx.reduce((s,x)=>s+Number(x.amount),0);
+ return {tx,revenue,customers:tx.length,avg:tx.length?revenue/tx.length:0};
+}
+function previousRange(view){
+ const now=new Date();
+ if(view==='monthly'){let end=new Date(now.getFullYear(),now.getMonth(),0,23,59,59,999);return [startOfMonth(end),end]}
+ if(view==='weekly'){let end=new Date(startOfWeek(now)-1);end.setHours(23,59,59,999);return [startOfWeek(end),end]}
+ if(view==='daily'){let d=new Date(now);d.setDate(d.getDate()-1);return [new Date(d.setHours(0,0,0,0)),new Date(d.setHours(23,59,59,999))]}
+ return null;
+}
+function refresh(){
+ $('display').textContent=money(amount||0);
+ $('todayText').textContent=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+ const [a,b]=rangeFor(currentView), s=summary(a,b);
+ $('topLabel').textContent=currentView==='custom'?'CUSTOM PERIOD':currentView.toUpperCase()+' REVENUE';
+ $('topRevenue').textContent=money(s.revenue);
+ $('topCustomers').textContent=s.customers;
+ $('topAverage').textContent=money(s.avg);
+ $('reportTitle').textContent=currentView==='custom'?'Custom Report':currentView[0].toUpperCase()+currentView.slice(1)+' Report';
+ $('rRevenue').textContent=money(s.revenue);
+ $('rCustomers').textContent=s.customers;
+ $('rAverage').textContent=money(s.avg);
+ const pr=previousRange(currentView);
+ $('rLast').textContent=pr?money(summary(...pr).revenue):'—';
+ renderTransactions();
+}
+function addSale(){
+ const n=Number(amount); if(!n||n<0)return;
+ data.transactions.push({id:crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random(),amount:n,time:new Date().toISOString()});
+ save();amount='';refresh();
+}
+function renderTransactions(){
+ const [a,b]=rangeFor('daily');
+ const tx=summary(a,b).tx.slice().reverse();
+ $('transactions').innerHTML=tx.length?tx.map((x,i)=>`
+ <div class="tx"><div><b>#${tx.length-i}</b> ${money(x.amount)}<div class="meta">${new Date(x.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div></div>
+ <button onclick="editTx('${x.id}')">Edit</button></div>`).join(''):'<p style="color:#6b7280">No transactions yet today.</p>';
+}
+window.editTx=function(id){
+ const x=data.transactions.find(t=>t.id===id); if(!x)return;
+ const n=prompt('Enter corrected amount',x.amount);
+ if(n!==null&&Number(n)>=0){x.amount=Number(n);save();refresh();}
+}
+document.querySelectorAll('.key').forEach(k=>k.addEventListener('click',()=>{
+ const v=k.dataset.key;
+ if(v==='C')amount='';
+ else if(v==='back')amount=amount.slice(0,-1);
+ else if(amount.length<9)amount+=v;
+ refresh();
+}));
+$('ok').onclick=addSale;
+$('recordsBtn').onclick=()=>{$('list').style.display=$('list').style.display==='block'?'none':'block'};
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
+ currentView=t.dataset.view;$('customPeriod').style.display=currentView==='custom'?'block':'none';refresh();
+});
+$('applyCustom').onclick=()=>{if($('fromDate').value&&$('toDate').value)customRange=[$('fromDate').value,$('toDate').value];refresh()};
+$('adjustBtn').onclick=()=>{
+ const tx=data.transactions.filter(x=>dateKey(new Date(x.time))===dateKey()).sort((a,b)=>new Date(b.time)-new Date(a.time));
+ if(!tx.length){alert('No previous customer transaction today.');return}
+ $('adjustInput').value=tx[0].amount;$('modal').style.display='flex';$('modal').dataset.id=tx[0].id;
+};
+$('cancelAdjust').onclick=()=>$('modal').style.display='none';
+$('saveAdjust').onclick=()=>{
+ const id=$('modal').dataset.id,n=Number($('adjustInput').value);
+ const x=data.transactions.find(t=>t.id===id);
+ if(x&&n>=0){x.amount=n;save();$('modal').style.display='none';refresh()}
+};
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function reportText(){
+ const [a,b]=rangeFor(currentView),s=summary(a,b);
+ const lines=[`SALES REPORT`,`Period: ${a.toLocaleDateString('en-IN')} - ${b.toLocaleDateString('en-IN')}`,``,`Total Revenue: ${money(s.revenue)}`,`Customers: ${s.customers}`,`Average Sale: ${money(s.avg)}`,``,`Transactions:`];
+ s.tx.forEach((x,i)=>lines.push(`${i+1}. ${money(x.amount)} - ${new Date(x.time).toLocaleString('en-IN')}`));
+ return lines.join('\\n');
+}
+$('pdfBtn').onclick=()=>{
+ const text=reportText();
+ const w=window.open('','_blank');
+ if(!w){alert('Please allow pop-ups to generate the report.');return}
+ w.document.write(`<pre style="font:14px system-ui;white-space:pre-wrap;padding:30px">${escapeHtml(text)}</pre><script>window.print()<\/script>`);
+ w.document.close();
+};
+$('backupBtn').onclick=()=>{
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`sales-backup-${dateKey()}.json`;a.click();URL.revokeObjectURL(a.href);
+};
+refresh();
+</script>
+</body>
+</html>
